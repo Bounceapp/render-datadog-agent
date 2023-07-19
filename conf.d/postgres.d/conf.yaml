@@ -7,3 +7,4 @@ instances:
     password: "%%env_DB_PASSWORD%%"
     dbname: "%%env_DB_NAME%%"
     ssl: prefer
+    dbstrict: true
