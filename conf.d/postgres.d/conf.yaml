@@ -1,6 +1,6 @@
 init_config:
 instances:
-  - dbm: "%%env_DBM_ENABLE%%"
+  - dbm: "%%env_DBM_ENABLED%%"
     host: "%%env_DB_HOST%%"
     port: "%%env_DB_PORT%%"
     username: datadog

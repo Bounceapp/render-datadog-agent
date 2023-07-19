@@ -9,3 +9,13 @@ This example deploys Datadog's [Docker agent](https://docs.datadoghq.com/agent/d
 The URL will look like `datadog-agent-lkyz` with APM available on TCP port `8126` and DogStatsD on UDP port `8125`.
 
 > You will need to configure your Datadog API key by setting the `DD_API_KEY` environment variable to your private service.
+
+## Database monitoring
+
+Set the following environment variables to setup database monitoring:
+
+- `DBM_ENABLED`: Set to `true` to enable database monitoring
+- `DB_HOST`: The hostname of your database server
+- `DB_PORT`: The port of your database server
+- `DB_PASSWORD`: The password of the datadog user on your database
+- `DB_NAME`: The name of the database to monitor
