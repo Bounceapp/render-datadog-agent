@@ -19,3 +19,7 @@ ARG RENDER_SERVICE_NAME=datadog
 
 ENV DD_BIND_HOST=$RENDER_SERVICE_NAME
 ENV DD_HOSTNAME=$RENDER_SERVICE_NAME
+
+# Copy the custom conf.d files
+COPY ./conf.d /build_conf.d
+RUN cp -R /build_conf.d/* /etc/datadog-agent/conf.d/ && rm -rf /build_conf.d/
