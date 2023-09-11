@@ -10,12 +10,26 @@ The URL will look like `datadog-agent-lkyz` with APM available on TCP port `8126
 
 > You will need to configure your Datadog API key by setting the `DD_API_KEY` environment variable to your private service.
 
-## Database monitoring
+## Custom configurations
 
-Set the following environment variables to setup database monitoring:
+You can create a secret file in render with the following name pattern `conf.d_<integration_name>_<file_name.yaml?` and this will be copied to its respective location in the container `/etc/datadog-agent/conf.d/<integration_name>/<file_name>`.
 
-- `DBM_ENABLED`: Set to `true` to enable database monitoring
-- `DB_HOST`: The hostname of your database server
-- `DB_PORT`: The port of your database server
-- `DB_PASSWORD`: The password of the datadog user on your database
-- `DB_NAME`: The name of the database to monitor
+*Example:* `conf.d_postgres.d_conf.yaml` will be copied to `/etc/datadog-agent/conf.d/postgres.d/conf.yaml`
+
+### Database monitoring
+
+Create a secret file in Render named `conf.d_postgres.d_conf.yaml` and content:
+  
+  ```yaml
+  init_config:
+  instances:
+    - dbm: true
+      host: <DB_HOST>
+      port: <DB_PORT>
+      username: datadog
+      password: <DB_PASSWORD>
+      dbname: <DB_NAME>
+      ssl: prefer
+      dbstrict: true
+  ```
+  
