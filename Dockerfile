@@ -24,6 +24,9 @@ ENV DD_HOSTNAME=$RENDER_SERVICE_NAME
 # COPY ./conf.d /build_conf.d
 # RUN cp -R /build_conf.d/* /etc/datadog-agent/conf.d/ && rm -rf /build_conf.d/
 
+# PlanetScale's custom check from github.com/planetscale/planetscale-datadog
+COPY ./checks.d/ /etc/datadog-agent/checks.d/
+
 # Copy the secret conf.d files
 COPY ./copy_secret_conf.sh /copy_secret_conf.sh
 COPY conf.d_* /secret_configs/
