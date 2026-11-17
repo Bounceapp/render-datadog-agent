@@ -1,4 +1,4 @@
-FROM datadog/agent:7
+FROM datadog/agent:7.85.4
 
 # disable autoconfigured checks; DD container checks
 # do not work as-is on Render since there's no access

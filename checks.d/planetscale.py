@@ -220,31 +220,19 @@ class PlanetScaleCheck(OpenMetricsBaseCheckV2):
             concurrent.futures.wait(futures)
             
     def _scrape_single_target(self, dynamic_instance):
+        endpoint = dynamic_instance["openmetrics_endpoint"]
         try:
-            # Set the namespace for this scraper
-            self.__NAMESPACE__ = dynamic_instance["namespace"]
-            
-            # Create the scraper using the base class method
-            scraper = self.create_scraper(dynamic_instance)
-            
-            # Log the scraper's namespace for debugging
-            self.log.debug(f"Scraper namespace: {scraper.namespace}")
-            self.log.debug(f"Check namespace: {self.__NAMESPACE__}")
-            
-            # Perform the actual scraping
-            endpoint = dynamic_instance.get("openmetrics_endpoint", "unknown")
-            self.log.debug(f"Scraping metrics from {endpoint}")
-            scraper.scrape()
-            
+            with self.adopt_namespace(dynamic_instance["namespace"]):
+                scraper = self.create_scraper(dynamic_instance)
+                self.log.debug(f"Scraping metrics from {endpoint}")
+                scraper.scrape()
         except Exception as e:
-            endpoint = dynamic_instance.get("openmetrics_endpoint", "unknown")
             self.log.error(f"Error scraping metrics from {endpoint}: {e}")
-            target_tags = dynamic_instance.get("tags", [])
             self.service_check(
                 "planetscale.target.can_scrape",
                 AgentCheck.CRITICAL,
                 message=str(e),
-                tags=target_tags,
+                tags=dynamic_instance.get("tags", []),
             )
 
     def _normalize_database_tags(self, database_tags):
