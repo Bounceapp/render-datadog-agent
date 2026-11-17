@@ -1,4 +1,4 @@
-FROM datadog/agent:7
+FROM datadog/agent:7.85.4
 
 # disable autoconfigured checks; DD container checks
 # do not work as-is on Render since there's no access
@@ -23,6 +23,9 @@ ENV DD_HOSTNAME=$RENDER_SERVICE_NAME
 # Copy the custom conf.d files
 # COPY ./conf.d /build_conf.d
 # RUN cp -R /build_conf.d/* /etc/datadog-agent/conf.d/ && rm -rf /build_conf.d/
+
+# PlanetScale's custom check from github.com/planetscale/planetscale-datadog
+COPY ./checks.d/ /etc/datadog-agent/checks.d/
 
 # Copy the secret conf.d files
 COPY ./copy_secret_conf.sh /copy_secret_conf.sh
