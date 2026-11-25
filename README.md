@@ -33,3 +33,17 @@ Create a secret file in Render named `conf.d_postgres.d_conf.yaml` and content:
       dbstrict: true
   ```
   
+
+### PlanetScale metrics
+
+`checks.d/planetscale.py` is PlanetScale's [custom check](https://github.com/planetscale/planetscale-datadog). Configure it with a Render secret file named `conf.d_planetscale.d_conf.yaml`, starting from [`conf.d/planetscale.d/conf.yaml.example`](conf.d/planetscale.d/conf.yaml.example). That example maps metric names the way [PlanetScale's docs](https://planetscale.com/docs/postgres/monitoring/prometheus-metrics-datadog-postgres) recommend.
+
+`primary_hostnames` sends a branch primary's metrics with the Postgres DBM check's `reported_hostname`, so Database Monitoring associates them with that database instance.
+
+Run the check's tests with:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r tests/requirements.txt
+.venv/bin/pytest
+```

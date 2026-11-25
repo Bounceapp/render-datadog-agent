@@ -1,8 +1,25 @@
+# Modified from planetscale/planetscale-datadog@0845dd4286 (Apache-2.0, see planetscale.LICENSE).
 import requests
 from copy import deepcopy
 import concurrent.futures
 from datadog_checks.base import AgentCheck, ConfigurationError
 from datadog_checks.base.checks.openmetrics.v2.base import OpenMetricsBaseCheckV2
+from datadog_checks.base.checks.openmetrics.v2.scraper import OpenMetricsScraper
+
+
+class PlanetScaleScraper(OpenMetricsScraper):
+    def __init__(self, check, config):
+        super(PlanetScaleScraper, self).__init__(check, config)
+        self.primary_hostnames = config.get("primary_hostnames", {})
+
+    def generate_sample_data(self, metric):
+        for sample, tags, hostname in super(PlanetScaleScraper, self).generate_sample_data(metric):
+            labels = sample.labels
+            if labels.get("planetscale_role") == "primary":
+                hostname = self.primary_hostnames.get(
+                    labels.get("planetscale_database_branch_id"), hostname
+                )
+            yield sample, tags, hostname
 
 
 class PlanetScaleCheck(OpenMetricsBaseCheckV2):
@@ -106,6 +123,7 @@ class PlanetScaleCheck(OpenMetricsBaseCheckV2):
         # Set max workers - adjust based on your needs
         max_workers = instance.get("max_concurrent_requests", 1)
         database_tags_config = self._normalize_database_tags(instance.get("database_tags"))
+        primary_hostnames = self._validate_primary_hostnames(instance.get("primary_hostnames"))
         
         # Create a list to store target configurations for parallel processing
         scrape_configs = []
@@ -138,6 +156,9 @@ class PlanetScaleCheck(OpenMetricsBaseCheckV2):
                 "non_cumulative_histogram_buckets": instance.get(
                     "non_cumulative_histogram_buckets", False
                 ),
+                "collect_counters_with_distributions": instance.get(
+                    "collect_counters_with_distributions", False
+                ),
                 "raw_metric_prefix": instance.get("raw_metric_prefix", ""),
                 "cache_metric_wildcards": instance.get("cache_metric_wildcards", True),
                 "monotonic_counter": instance.get("monotonic_counter", True),
@@ -151,6 +172,7 @@ class PlanetScaleCheck(OpenMetricsBaseCheckV2):
                 "ssl_private_key": instance.get("ssl_private_key", None),
                 "ssl_ca_cert": instance.get("ssl_ca_cert", None),
                 "timeout": instance.get("timeout", 10),
+                "primary_hostnames": primary_hostnames,
             }
 
             # --- Construct the full endpoint URL ---
@@ -234,6 +256,22 @@ class PlanetScaleCheck(OpenMetricsBaseCheckV2):
                 message=str(e),
                 tags=dynamic_instance.get("tags", []),
             )
+
+    def create_scraper(self, config):
+        return PlanetScaleScraper(self, self.get_config_with_defaults(config))
+
+    def _validate_primary_hostnames(self, primary_hostnames):
+        if primary_hostnames is None:
+            return {}
+
+        if not isinstance(primary_hostnames, dict) or not all(
+            isinstance(host, str) for host in primary_hostnames.values()
+        ):
+            raise ConfigurationError(
+                "Option 'primary_hostnames' must be a mapping of branch ids to hostnames."
+            )
+
+        return primary_hostnames
 
     def _normalize_database_tags(self, database_tags):
         if database_tags is None:

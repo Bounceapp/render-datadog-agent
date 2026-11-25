@@ -1,8 +1,11 @@
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+import yaml
 from datadog_checks.base import AgentCheck, ConfigurationError
+from datadog_checks.base.checks.openmetrics.v2.scraper import OpenMetricsScraper
 
 from planetscale import PlanetScaleCheck
 
@@ -216,3 +219,98 @@ class TestApiConnectivity:
             check.check(make_instance())
             names_and_statuses = [(c.args[0], c.args[1]) for c in mock_sc.call_args_list]
             assert ("planetscale.api.can_connect", AgentCheck.OK) in names_and_statuses
+
+
+EXAMPLE_CONFIG = Path(__file__).parent.parent / "conf.d" / "planetscale.d" / "conf.yaml.example"
+
+PAYLOAD = """\
+# TYPE planetscale_postgres_connection_state gauge
+planetscale_postgres_connection_state{planetscale_database_branch_id="d2hp3rrvzv9h",planetscale_role="primary",planetscale_connection_state="active"} 5
+planetscale_postgres_connection_state{planetscale_database_branch_id="d2hp3rrvzv9h",planetscale_role="replica",planetscale_connection_state="active"} 2
+planetscale_postgres_connection_state{planetscale_database_branch_id="652ojcnjp51o",planetscale_role="primary",planetscale_connection_state="active"} 1
+# TYPE planetscale_pods_iops_total counter
+planetscale_pods_iops_total{planetscale_database_branch_id="d2hp3rrvzv9h",planetscale_role="primary"} 100
+# TYPE planetscale_pods_container_restarts_total counter
+planetscale_pods_container_restarts_total{planetscale_database_branch_id="d2hp3rrvzv9h",planetscale_role="primary"} 1
+"""
+
+
+@pytest.fixture
+def example_instance():
+    instance = yaml.safe_load(EXAMPLE_CONFIG.read_text())["instances"][0]
+    instance["metrics"] = [dict(m) for m in instance["metrics"]]
+    return instance
+
+
+@pytest.fixture
+def scrape_payload(aggregator):
+    def run(instance):
+        check = PlanetScaleCheck("planetscale", {}, [instance])
+        with patch.object(
+            OpenMetricsScraper,
+            "stream_connection_lines",
+            return_value=iter(PAYLOAD.splitlines()),
+        ):
+            check.scrape_planetscale_targets(instance, [make_target(database_name="bounce-data")])
+        return aggregator
+
+    return run
+
+
+@pytest.fixture
+def aggregator():
+    from datadog_checks.base.stubs import aggregator as stub
+
+    stub.reset()
+    return stub
+
+
+class TestExampleConfigTransformation:
+    def test_gauge_is_renamed_per_planetscale_docs(self, scrape_payload, example_instance):
+        aggregator = scrape_payload(example_instance)
+        aggregator.assert_metric("planetscale_postgres.postgres_connection_state", value=5)
+        assert not aggregator.metrics("planetscale.planetscale_postgres_connection_state")
+
+    def test_counter_is_renamed_without_total_suffix(self, scrape_payload, example_instance):
+        aggregator = scrape_payload(example_instance)
+        assert aggregator.metrics("planetscale_postgres.pods_iops.count")
+
+    def test_deprecated_metric_is_not_collected(self, scrape_payload, example_instance):
+        aggregator = scrape_payload(example_instance)
+        assert not aggregator.metrics("planetscale_postgres.pods_container_restarts.count")
+
+
+class TestPrimaryHostnames:
+    def test_mapped_branch_primary_reports_dbm_host(self, scrape_payload, example_instance):
+        aggregator = scrape_payload(example_instance)
+        aggregator.assert_metric(
+            "planetscale_postgres.postgres_connection_state",
+            value=5,
+            hostname="bounce-data-planetscale",
+        )
+
+    def test_mapped_branch_replica_keeps_agent_host(self, scrape_payload, example_instance):
+        aggregator = scrape_payload(example_instance)
+        aggregator.assert_metric(
+            "planetscale_postgres.postgres_connection_state", value=2, hostname=""
+        )
+
+    def test_unmapped_branch_primary_keeps_agent_host(self, scrape_payload, example_instance):
+        aggregator = scrape_payload(example_instance)
+        aggregator.assert_metric(
+            "planetscale_postgres.postgres_connection_state", value=1, hostname=""
+        )
+
+    def test_invalid_shape_raises(self, capture_scraper_configs):
+        with pytest.raises(ConfigurationError, match="primary_hostnames"):
+            capture_scraper_configs(
+                make_instance(primary_hostnames=["bounce-data-planetscale"]), [make_target()]
+            )
+
+
+class TestScraperOptionPassthrough:
+    def test_collect_counters_with_distributions_reaches_scraper(self, capture_scraper_configs):
+        configs = capture_scraper_configs(
+            make_instance(collect_counters_with_distributions=True), [make_target()]
+        )
+        assert configs[0]["collect_counters_with_distributions"] is True
