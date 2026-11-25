@@ -1,6 +1,6 @@
 # Reference for the Render secret file `conf.d_planetscale.d_conf.yaml`.
-# Metric mapping follows https://planetscale.com/docs/postgres/monitoring/prometheus-metrics-datadog-postgres
-# Counters are listed without their `_total` suffix and arrive in Datadog as `<name>.count`.
+# Metric names follow https://planetscale.com/docs/postgres/monitoring/prometheus-metrics-datadog-postgres
+# Counters arrive in Datadog as `<name>.count`.
 init_config:
 
 instances:
@@ -9,60 +9,24 @@ instances:
     ps_service_token_secret: '<TOKEN_SECRET>'
 
     namespace: 'planetscale_postgres'
+    raw_metric_prefix: 'planetscale_'
+    # The docs' irregular renames, then everything else under its PlanetScale name.
+    # Renames are keyed by the name after `raw_metric_prefix` is stripped.
     metrics:
-      - planetscale_postgres_connection_state: postgres_connection_state
-      - planetscale_postgres_wal_archiver_succeeded_count: postgres_wal_archiver_succeeded_count
-      - planetscale_postgres_wal_archiver_failed_count: postgres_wal_archiver_failed_count
-      - planetscale_postgres_wal_archiver_last_age_succeeded: postgres_wal_archiver_last_age_succeeded
-      - planetscale_postgres_wal_archiver_lag_bytes: postgres_wal_archiver_lag_bytes
-      - planetscale_postgres_wal_size_bytes: postgres_wal_size
-      - planetscale_postgres_settings_max_connections: postgres_settings_max_connections
-      - planetscale_postgres_settings_max_wal_size_bytes: postgres_settings_max_wal_size_bytes
-      - planetscale_postgres_settings_max_slot_wal_keep_size_bytes: postgres_settings_max_slot_wal_keep_size_bytes
-      - planetscale_postgres_replication_slot_max_wal_retained_bytes: postgres_replication_slot_max_wal_retained_bytes
-      - planetscale_postgres_replication_slot_min_safe_wal_size_bytes: postgres_replication_slot_min_safe_wal_size_bytes
-      - planetscale_postgres_replication_slots_lost: postgres_replication_slots_lost
-      - planetscale_postgres_replica_lag_seconds: postgres_replica_lag_seconds
-      - planetscale_postgres_locks: postgres_locks
-      - planetscale_postgres_wait_events: postgres_wait_events
-      - planetscale_postgres_database_xact_commit: postgres_database_xact_commit
-      - planetscale_postgres_upstream_archive_bytes: postgres_upstream_archive_bytes
-      - planetscale_postgres_upstream_streaming_bytes: postgres_upstream_streaming_bytes
-      - planetscale_backup_restore_active: backup_restore_active
-      - planetscale_backup_fetch_percent: backup_fetch_percent
-      - planetscale_edge_postgres_active_connections: edge_active_connections
-      - planetscale_edge_postgres_connection_drops: edge_connection_drops
-      - planetscale_edge_postgres_connection_errors: edge_connection_errors
-      - planetscale_edge_postgres_bytes_sent: edge_bytes_sent
-      - planetscale_edge_postgres_bytes_received: edge_bytes_received
-      - planetscale_pgbouncer_total_peers: pgbouncer_total_peers
-      - planetscale_pgbouncer_cpu_util_per_peer_percentages: pgbouncer_cpu_util_per_peer_percentages
-      - planetscale_pgbouncer_current_connections: pgbouncer_connections
-      - planetscale_pgbouncer_current_client_connections: pgbouncer_current_client_connections
-      - planetscale_pgbouncer_pools_client_maxwait_seconds: pgbouncer_pools_client_maxwait_seconds
-      - planetscale_pgbouncer_pools_client: pgbouncer_pools_client
-      - planetscale_pgbouncer_pools_server: pgbouncer_pools_server
-      - planetscale_pgbouncer_settings_max_client_conn: pgbouncer_settings_max_client_conn
-      - planetscale_pods_cpu_util_percentages: pods_cpu_util_percentages
-      - planetscale_pods_mem_util_percentages: pods_mem_util_percentages
-      - planetscale_pods_mem_rss_bytes: pods_mem_rss_bytes
-      - planetscale_pods_mem_mmap_bytes: pods_mem_mmap_bytes
-      - planetscale_pods_mem_active_cache_bytes: pods_mem_active_cache_bytes
-      - planetscale_pods_mem_inactive_cache_bytes: pods_mem_inactive_cache_bytes
-      - planetscale_pods_iops: pods_iops
-      - planetscale_volume_available_bytes: volume_available_bytes
-      - planetscale_volume_capacity_bytes: volume_capacity_bytes
-      - planetscale_pods_container_status_restarts: pods_container_status_restarts
-      - planetscale_pods_container_last_terminated_reason: pods_container_last_terminated_reason
-      - planetscale_pods_container_waiting_reason: pods_container_waiting_reason
-      - planetscale_pods_status_phase: pods_status_phase
+      - edge_postgres_active_connections: edge_active_connections
+      - edge_postgres_connection_drops: edge_connection_drops
+      - edge_postgres_connection_errors: edge_connection_errors
+      - edge_postgres_bytes_sent: edge_bytes_sent
+      - edge_postgres_bytes_received: edge_bytes_received
+      - pgbouncer_current_connections: pgbouncer_connections
+      - postgres_wal_size_bytes: postgres_wal_size
+      - '.*'
+
+    # Without this the agent tags every series with its own hostname. Pods are identified
+    # by `planetscale_pod` and `planetscale_instance_type` instead.
+    empty_default_hostname: true
 
     min_collection_interval: 60
     send_distribution_buckets: true
     collect_counters_with_distributions: true
     max_concurrent_requests: 1
-
-    # Branch id -> the Postgres DBM check's `reported_hostname`. Metrics from that branch's
-    # primary are sent with this host so they line up with the DBM database instance.
-    primary_hostnames:
-      d2hp3rrvzv9h: bounce-data-planetscale

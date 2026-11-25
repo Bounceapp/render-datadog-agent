@@ -38,7 +38,35 @@ Create a secret file in Render named `conf.d_postgres.d_conf.yaml` and content:
 
 `checks.d/planetscale.py` is PlanetScale's [custom check](https://github.com/planetscale/planetscale-datadog). Configure it with a Render secret file named `conf.d_planetscale.d_conf.yaml`, starting from [`conf.d/planetscale.d/conf.yaml.example`](conf.d/planetscale.d/conf.yaml.example). That example maps metric names the way [PlanetScale's docs](https://planetscale.com/docs/postgres/monitoring/prometheus-metrics-datadog-postgres) recommend.
 
-`primary_hostnames` sends a branch primary's metrics with the Postgres DBM check's `reported_hostname`, so Database Monitoring associates them with that database instance.
+The check tags every series with `planetscale_instance_type`, which says what it comes from:
+
+| Value | What it is |
+|---|---|
+| `primary` | the writable database pod |
+| `ha_replica` | a failover copy of the primary |
+| `dedicated_replica` | a pod of a dedicated read replica, such as `green-flamingo` |
+| `pooler` | a standalone PgBouncer pod |
+| `backup` | a short-lived backup pod |
+| `edge` | PlanetScale's connection front door |
+
+A database pod's own PgBouncer container gets the pod's value, not `pooler`.
+
+#### Database Monitoring for a dedicated read replica
+
+A dedicated read replica has its own host, so it can be a second instance in `conf.d_postgres.d_conf.yaml`, next to the primary's:
+
+```yaml
+    - dbm: true
+      host: <REPLICA_HOST>
+      port: 5432
+      username: <USERNAME>|replica
+      password: <DB_PASSWORD>
+      dbname: <DB_NAME>
+      reported_hostname: bounce-data-planetscale-green-flamingo
+      ssl: require
+```
+
+Check that the agent can reach the replica's region before adding it.
 
 Run the check's tests with:
 

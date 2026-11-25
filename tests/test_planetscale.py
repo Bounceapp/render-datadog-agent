@@ -223,38 +223,36 @@ class TestApiConnectivity:
 
 EXAMPLE_CONFIG = Path(__file__).parent.parent / "conf.d" / "planetscale.d" / "conf.yaml.example"
 
-PAYLOAD = """\
-# TYPE planetscale_postgres_connection_state gauge
-planetscale_postgres_connection_state{planetscale_database_branch_id="d2hp3rrvzv9h",planetscale_role="primary",planetscale_connection_state="active"} 5
-planetscale_postgres_connection_state{planetscale_database_branch_id="d2hp3rrvzv9h",planetscale_role="replica",planetscale_connection_state="active"} 2
-planetscale_postgres_connection_state{planetscale_database_branch_id="652ojcnjp51o",planetscale_role="primary",planetscale_connection_state="active"} 1
+# Label sets as they arrive from bounce-data today: branch d2hp3rrvzv9h (main) and the
+# dedicated read replica green-flamingo (652ojcnjp51o).
+MAIN_PAYLOAD = """\
+# TYPE planetscale_pods_cpu_util_percentages gauge
+planetscale_pods_cpu_util_percentages{planetscale_pod="hzi-main-a",planetscale_component="hzinstance",planetscale_role="primary",planetscale_database_branch_id="d2hp3rrvzv9h"} 20
+planetscale_pods_cpu_util_percentages{planetscale_pod="hzi-main-b",planetscale_component="hzinstance",planetscale_role="replica",planetscale_database_branch_id="d2hp3rrvzv9h"} 2
+# TYPE planetscale_pods_mem_rss_bytes gauge
+planetscale_pods_mem_rss_bytes{planetscale_pod="hzb-main",planetscale_component="hzbouncer",planetscale_database_branch_id="d2hp3rrvzv9h"} 100
+planetscale_pods_mem_rss_bytes{planetscale_pod="hzbj-main",planetscale_component="hzbackupjob",planetscale_database_branch_id="d2hp3rrvzv9h"} 200
+# TYPE planetscale_pgbouncer_current_connections gauge
+planetscale_pgbouncer_current_connections{planetscale_pod="hzi-main-b",planetscale_component="hzinstance",planetscale_role="replica",planetscale_database_branch_id="d2hp3rrvzv9h"} 4
+# TYPE planetscale_edge_postgres_active_connections gauge
+planetscale_edge_postgres_active_connections{planetscale_database_branch_id="d2hp3rrvzv9h"} 30
 # TYPE planetscale_pods_iops_total counter
-planetscale_pods_iops_total{planetscale_database_branch_id="d2hp3rrvzv9h",planetscale_role="primary"} 100
-# TYPE planetscale_pods_container_restarts_total counter
-planetscale_pods_container_restarts_total{planetscale_database_branch_id="d2hp3rrvzv9h",planetscale_role="primary"} 1
+planetscale_pods_iops_total{planetscale_pod="hzi-main-a",planetscale_component="hzinstance",planetscale_role="primary",planetscale_database_branch_id="d2hp3rrvzv9h"} 100
 """
+
+REPLICA_PAYLOAD = """\
+# TYPE planetscale_pods_cpu_util_percentages gauge
+planetscale_pods_cpu_util_percentages{planetscale_pod="hzi-gf",planetscale_component="hzinstance",planetscale_role="replica",planetscale_database_branch_id="652ojcnjp51o"} 9
+# TYPE planetscale_pods_mem_rss_bytes gauge
+planetscale_pods_mem_rss_bytes{planetscale_pod="hzb-gf",planetscale_component="hzbouncer",planetscale_database_branch_id="652ojcnjp51o"} 300
+"""
+
+GREEN_FLAMINGO = {"planetscale_read_only_replica_name": "green-flamingo"}
 
 
 @pytest.fixture
 def example_instance():
-    instance = yaml.safe_load(EXAMPLE_CONFIG.read_text())["instances"][0]
-    instance["metrics"] = [dict(m) for m in instance["metrics"]]
-    return instance
-
-
-@pytest.fixture
-def scrape_payload(aggregator):
-    def run(instance):
-        check = PlanetScaleCheck("planetscale", {}, [instance])
-        with patch.object(
-            OpenMetricsScraper,
-            "stream_connection_lines",
-            return_value=iter(PAYLOAD.splitlines()),
-        ):
-            check.scrape_planetscale_targets(instance, [make_target(database_name="bounce-data")])
-        return aggregator
-
-    return run
+    return yaml.safe_load(EXAMPLE_CONFIG.read_text())["instances"][0]
 
 
 @pytest.fixture
@@ -265,47 +263,94 @@ def aggregator():
     return stub
 
 
-class TestExampleConfigTransformation:
-    def test_gauge_is_renamed_per_planetscale_docs(self, scrape_payload, example_instance):
-        aggregator = scrape_payload(example_instance)
-        aggregator.assert_metric("planetscale_postgres.postgres_connection_state", value=5)
-        assert not aggregator.metrics("planetscale.planetscale_postgres_connection_state")
+@pytest.fixture
+def scrape(aggregator):
+    def run(instance, payload, target_labels=None):
+        check = PlanetScaleCheck("planetscale", {}, [instance])
+        with patch.object(
+            OpenMetricsScraper,
+            "stream_connection_lines",
+            return_value=iter(payload.splitlines()),
+        ):
+            check.scrape_planetscale_targets(
+                instance, [make_target(database_name="bounce-data", extra_labels=target_labels)]
+            )
+        return aggregator
 
-    def test_counter_is_renamed_without_total_suffix(self, scrape_payload, example_instance):
-        aggregator = scrape_payload(example_instance)
+    return run
+
+
+def instance_types(aggregator, metric_name):
+    return sorted(
+        tag.split(":", 1)[1]
+        for metric in aggregator.metrics(metric_name)
+        for tag in metric.tags
+        if tag.startswith("planetscale_instance_type:")
+    )
+
+
+class TestExampleConfigNaming:
+    def test_prefix_is_not_doubled(self, scrape, example_instance):
+        aggregator = scrape(example_instance, MAIN_PAYLOAD)
+        assert aggregator.metrics("planetscale_postgres.pods_cpu_util_percentages")
+        assert not aggregator.metrics("planetscale.planetscale_pods_cpu_util_percentages")
+
+    def test_docs_renames_apply(self, scrape, example_instance):
+        aggregator = scrape(example_instance, MAIN_PAYLOAD)
+        assert aggregator.metrics("planetscale_postgres.edge_active_connections")
+        assert aggregator.metrics("planetscale_postgres.pgbouncer_connections")
+
+    def test_counter_drops_total_suffix(self, scrape, example_instance):
+        aggregator = scrape(example_instance, MAIN_PAYLOAD)
         assert aggregator.metrics("planetscale_postgres.pods_iops.count")
 
-    def test_deprecated_metric_is_not_collected(self, scrape_payload, example_instance):
-        aggregator = scrape_payload(example_instance)
-        assert not aggregator.metrics("planetscale_postgres.pods_container_restarts.count")
+    def test_metrics_carry_no_host(self, example_instance):
+        assert example_instance["empty_default_hostname"] is True
 
 
-class TestPrimaryHostnames:
-    def test_mapped_branch_primary_reports_dbm_host(self, scrape_payload, example_instance):
-        aggregator = scrape_payload(example_instance)
-        aggregator.assert_metric(
-            "planetscale_postgres.postgres_connection_state",
-            value=5,
-            hostname="bounce-data-planetscale",
-        )
+class TestInstanceType:
+    def test_primary(self, scrape, example_instance):
+        aggregator = scrape(example_instance, MAIN_PAYLOAD)
+        assert "primary" in instance_types(aggregator, "planetscale_postgres.pods_cpu_util_percentages")
 
-    def test_mapped_branch_replica_keeps_agent_host(self, scrape_payload, example_instance):
-        aggregator = scrape_payload(example_instance)
-        aggregator.assert_metric(
-            "planetscale_postgres.postgres_connection_state", value=2, hostname=""
-        )
+    def test_ha_replica(self, scrape, example_instance):
+        aggregator = scrape(example_instance, MAIN_PAYLOAD)
+        assert "ha_replica" in instance_types(aggregator, "planetscale_postgres.pods_cpu_util_percentages")
 
-    def test_unmapped_branch_primary_keeps_agent_host(self, scrape_payload, example_instance):
-        aggregator = scrape_payload(example_instance)
-        aggregator.assert_metric(
-            "planetscale_postgres.postgres_connection_state", value=1, hostname=""
-        )
+    def test_dedicated_replica(self, scrape, example_instance):
+        aggregator = scrape(example_instance, REPLICA_PAYLOAD, GREEN_FLAMINGO)
+        assert instance_types(aggregator, "planetscale_postgres.pods_cpu_util_percentages") == [
+            "dedicated_replica"
+        ]
 
-    def test_invalid_shape_raises(self, capture_scraper_configs):
-        with pytest.raises(ConfigurationError, match="primary_hostnames"):
-            capture_scraper_configs(
-                make_instance(primary_hostnames=["bounce-data-planetscale"]), [make_target()]
-            )
+    def test_pooler(self, scrape, example_instance):
+        aggregator = scrape(example_instance, MAIN_PAYLOAD)
+        assert "pooler" in instance_types(aggregator, "planetscale_postgres.pods_mem_rss_bytes")
+
+    def test_dedicated_replica_pooler_is_pooler(self, scrape, example_instance):
+        aggregator = scrape(example_instance, REPLICA_PAYLOAD, GREEN_FLAMINGO)
+        assert instance_types(aggregator, "planetscale_postgres.pods_mem_rss_bytes") == ["pooler"]
+
+    def test_backup(self, scrape, example_instance):
+        aggregator = scrape(example_instance, MAIN_PAYLOAD)
+        assert "backup" in instance_types(aggregator, "planetscale_postgres.pods_mem_rss_bytes")
+
+    def test_edge(self, scrape, example_instance):
+        aggregator = scrape(example_instance, MAIN_PAYLOAD)
+        assert instance_types(aggregator, "planetscale_postgres.edge_active_connections") == ["edge"]
+
+    def test_database_pod_pgbouncer_container_gets_pod_type(self, scrape, example_instance):
+        aggregator = scrape(example_instance, MAIN_PAYLOAD)
+        assert instance_types(aggregator, "planetscale_postgres.pgbouncer_connections") == ["ha_replica"]
+
+    def test_every_series_gets_exactly_one_type(self, scrape, example_instance):
+        aggregator = scrape(example_instance, MAIN_PAYLOAD)
+        for name in aggregator.metric_names:
+            if name.startswith("planetscale_postgres.telemetry"):
+                continue
+            for metric in aggregator.metrics(name):
+                types = [t for t in metric.tags if t.startswith("planetscale_instance_type:")]
+                assert len(types) == 1, (name, metric.tags)
 
 
 class TestScraperOptionPassthrough:
