@@ -1,0 +1,32 @@
+# Reference for the Render secret file `conf.d_planetscale.d_conf.yaml`.
+# Metric names follow https://planetscale.com/docs/postgres/monitoring/prometheus-metrics-datadog-postgres
+# Counters arrive in Datadog as `<name>.count`.
+init_config:
+
+instances:
+  - planetscale_organization: '<ORG>'
+    ps_service_token_id: '<TOKEN_ID>'
+    ps_service_token_secret: '<TOKEN_SECRET>'
+
+    namespace: 'planetscale_postgres'
+    raw_metric_prefix: 'planetscale_'
+    # The docs' irregular renames, then everything else under its PlanetScale name.
+    # Renames are keyed by the name after `raw_metric_prefix` is stripped.
+    metrics:
+      - edge_postgres_active_connections: edge_active_connections
+      - edge_postgres_connection_drops: edge_connection_drops
+      - edge_postgres_connection_errors: edge_connection_errors
+      - edge_postgres_bytes_sent: edge_bytes_sent
+      - edge_postgres_bytes_received: edge_bytes_received
+      - pgbouncer_current_connections: pgbouncer_connections
+      - postgres_wal_size_bytes: postgres_wal_size
+      - '.*'
+
+    # Without this the agent tags every series with its own hostname. Pods are identified
+    # by `planetscale_pod` and `planetscale_instance_type` instead.
+    empty_default_hostname: true
+
+    min_collection_interval: 60
+    send_distribution_buckets: true
+    collect_counters_with_distributions: true
+    max_concurrent_requests: 1

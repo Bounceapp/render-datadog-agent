@@ -1,0 +1,3 @@
+pytest
+datadog-checks-base[deps]==38.8.0
+requests
